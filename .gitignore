@@ -1,0 +1,5 @@
+.env
+chapters/
+chapter_summaries/
+output/
+__pycache__/

@@ -227,12 +227,23 @@ def stage3(chapter_files: list[Path], dry_run: bool = False) -> list[tuple[Path,
         print("  --dry-run active: skipping API calls.")
         return []
 
-    # Check API key
+    # Check API key — try environment variable first, then .env file
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
+        env_file = BASE_DIR / ".env"
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                line = line.strip()
+                if line.startswith("ANTHROPIC_API_KEY="):
+                    api_key = line.split("=", 1)[1].strip().strip("'\"")
+                    break
+    if not api_key:
         print(
-            "ERROR: ANTHROPIC_API_KEY environment variable is not set.\n"
-            "Export it before running: export ANTHROPIC_API_KEY='sk-...'"
+            "ERROR: ANTHROPIC_API_KEY not found.\n"
+            "Set it in the .env file in the project root:\n"
+            "  1. Open the file called .env\n"
+            "  2. Replace YOUR_KEY_HERE with your actual API key\n"
+            "Get a key at: https://console.anthropic.com/settings/keys"
         )
         sys.exit(1)
 
