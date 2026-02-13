@@ -1,6 +1,7 @@
 .env
 chapters/
 chapter_summaries/
+abridged_chapters/
 output/
 selected_chapters.txt
 source/*.html
