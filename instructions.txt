@@ -1,6 +1,17 @@
-You are reading one chapter of a dense non-fiction book. Analyze it carefully and produce the following, in this order. 
+You are reading one chapter of a dense non-fiction book. Analyze it carefully and produce the following, in this order.
 THESIS — State the chapter's central argument in one sentence.
 OUTLINE — Provide a deductive outline of the chapter's reasoning in complete sentences. Show how premises lead to conclusions. Aim for 300-500 words depending on the chapter's density. Do not merely list topics covered — reconstruct the logical structure of the argument.
 KEY CONCEPTS — List any important terms, frameworks, or distinctions the chapter introduces or relies on, with brief working definitions (2-3 sentences each). Skip this section if the chapter introduces no notable concepts.
 KEY PASSAGES — Reproduce the 4-5 most important paragraphs from the chapter in full, unabridged. Select for argumentative weight — the passages where the author's core claims are most clearly and forcefully stated. Briefly note (one sentence) why each passage matters.
 CRITICAL QUESTIONS — Identify 1-2 places where the argument is most vulnerable: where evidence is thin, where a key assumption is doing heavy lifting, or where reasonable people might push back. Frame these as questions, not dismissals.
+
+FORMATTING — You MUST return your response as valid HTML. Use these tags:
+- <h2> for the chapter title at the top
+- <h3> for each section heading (THESIS, OUTLINE, KEY CONCEPTS, KEY PASSAGES, CRITICAL QUESTIONS)
+- <p> for paragraphs — every paragraph must be wrapped in <p>...</p> tags
+- <strong> for bold text
+- <em> for italic text
+- <blockquote> for quoted passages from the book
+- <ul> and <li> for lists
+- Do NOT use Markdown syntax (no ##, no **, no >). Return only HTML.
+- Do NOT include <html>, <head>, or <body> tags — just the content tags.

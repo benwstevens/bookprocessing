@@ -351,6 +351,82 @@ def stage3(chapter_files: list[Path], dry_run: bool = False) -> list[tuple[Path,
 
 
 # ===========================================================================
+# Markdown-to-HTML fallback converter
+# ===========================================================================
+def _markdown_to_html(text: str) -> str:
+    """Convert common Markdown patterns to HTML if Markdown is detected."""
+    # Only convert if it looks like Markdown (has ## headings or **bold**)
+    if not re.search(r"(^#{1,4}\s|\*\*|^>\s|^- )", text, re.MULTILINE):
+        return text
+
+    lines = text.split("\n")
+    html_lines = []
+    in_list = False
+    in_blockquote = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Headings: ### Title -> <h3>Title</h3>
+        heading_match = re.match(r"^(#{1,4})\s+(.+)$", stripped)
+        if heading_match:
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            if in_blockquote:
+                html_lines.append("</blockquote>")
+                in_blockquote = False
+            level = len(heading_match.group(1))
+            # Map # to h2, ## to h3, etc. (shift down by 1 so # = h2)
+            h_level = min(level + 1, 4)
+            html_lines.append(f"<h{h_level}>{heading_match.group(2).strip()}</h{h_level}>")
+            continue
+
+        # Blockquotes: > text
+        if stripped.startswith("> "):
+            if not in_blockquote:
+                html_lines.append("<blockquote>")
+                in_blockquote = True
+            html_lines.append(f"<p>{stripped[2:]}</p>")
+            continue
+        elif in_blockquote and stripped:
+            html_lines.append("</blockquote>")
+            in_blockquote = False
+
+        # List items: - text
+        if re.match(r"^[-*]\s+", stripped):
+            if not in_list:
+                html_lines.append("<ul>")
+                in_list = True
+            item_text = re.sub(r"^[-*]\s+", "", stripped)
+            html_lines.append(f"<li>{item_text}</li>")
+            continue
+        elif in_list and not stripped:
+            html_lines.append("</ul>")
+            in_list = False
+
+        # Empty lines
+        if not stripped:
+            continue
+
+        # Regular paragraphs
+        html_lines.append(f"<p>{stripped}</p>")
+
+    if in_list:
+        html_lines.append("</ul>")
+    if in_blockquote:
+        html_lines.append("</blockquote>")
+
+    result = "\n".join(html_lines)
+    # Bold: **text** -> <strong>text</strong>
+    result = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", result)
+    # Italic: *text* -> <em>text</em>
+    result = re.sub(r"\*(.+?)\*", r"<em>\1</em>", result)
+
+    return result
+
+
+# ===========================================================================
 # Stage 4 – Save processed chapters
 # ===========================================================================
 def stage4(
@@ -368,21 +444,32 @@ def stage4(
         summary_name = chapter_path.stem + "_summary.html"
         summary_path = SUMMARIES_DIR / summary_name
 
-        # If response is not HTML, wrap it
+        # Convert Markdown to HTML if the response contains Markdown syntax
+        response_text = _markdown_to_html(response_text)
+
+        # If response still has no HTML tags, wrap it
         if not re.search(r"<\w+[\s>]", response_text):
             # Extract chapter title from original file
             original = chapter_path.read_text(encoding="utf-8")
             title_match = re.search(r"<title>(.*?)</title>", original)
             title = title_match.group(1) if title_match else chapter_path.stem
             response_text = (
-                "<!DOCTYPE html>\n<html>\n<head>\n"
-                '<meta charset="utf-8">\n'
-                f"<title>{title}</title>\n"
-                "</head>\n<body>\n"
                 f"<h2>{title}</h2>\n"
                 f"<p>{response_text}</p>\n"
-                "</body>\n</html>"
             )
+
+        # Wrap in full HTML document
+        original = chapter_path.read_text(encoding="utf-8")
+        title_match = re.search(r"<title>(.*?)</title>", original)
+        title = title_match.group(1) if title_match else chapter_path.stem
+        response_text = (
+            "<!DOCTYPE html>\n<html>\n<head>\n"
+            '<meta charset="utf-8">\n'
+            f"<title>{title}</title>\n"
+            "</head>\n<body>\n"
+            f"{response_text}\n"
+            "</body>\n</html>"
+        )
 
         summary_path.write_text(response_text, encoding="utf-8")
         saved.append(summary_path)
