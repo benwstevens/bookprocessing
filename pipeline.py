@@ -17,10 +17,13 @@ import re
 import sys
 import time
 import glob
+import warnings
 from collections import Counter
 from pathlib import Path
 
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup, NavigableString, XMLParsedAsHTMLWarning
+
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 # ---------------------------------------------------------------------------
 # Directory layout
@@ -56,7 +59,14 @@ def stage1(html_path: Path) -> str:
             heading_info[tag] = texts
 
     if not heading_info:
+        # Show what tags ARE present to help debug
+        all_tags = Counter(tag.name for tag in soup.find_all(True))
         print("ERROR: No heading tags (h1-h4) found in the source file.")
+        print("\nMost common tags found:")
+        for tag_name, count in all_tags.most_common(10):
+            print(f"  <{tag_name}> — {count}")
+        print("\nIf converting from EPUB, try deleting the .html file in")
+        print("source/ and re-running so it reconverts from the EPUB.")
         sys.exit(1)
 
     # Print what we found
@@ -565,19 +575,42 @@ def convert_epub_to_html(epub_path: Path) -> Path:
     print(f"Converting EPUB to HTML: {epub_path.name}")
     book = ep.read_epub(str(epub_path))
 
-    # Collect all HTML content from the EPUB spine
-    html_parts = [
-        "<!DOCTYPE html>\n<html>\n<head>\n"
-        '<meta charset="utf-8">\n'
-    ]
-
     # Try to get title and author from metadata
     title = book.get_metadata("DC", "title")
     title = title[0][0] if title else epub_path.stem
     author = book.get_metadata("DC", "creator")
     author = author[0][0] if author else ""
 
-    html_parts.append(f"<title>{title}</title>\n")
+    # Build a map from EPUB file names to TOC titles
+    toc_map: dict[str, str] = {}
+    for toc_entry in book.toc:
+        if hasattr(toc_entry, "href") and hasattr(toc_entry, "title"):
+            # Strip anchor fragments (e.g., "chapter1.xhtml#id1" -> "chapter1.xhtml")
+            href = toc_entry.href.split("#")[0]
+            if toc_entry.title:
+                toc_map[href] = toc_entry.title
+        elif isinstance(toc_entry, tuple) and len(toc_entry) == 2:
+            # Some EPUBs nest TOC as (Section, [children])
+            section, children = toc_entry
+            if hasattr(section, "href") and hasattr(section, "title"):
+                href = section.href.split("#")[0]
+                if section.title:
+                    toc_map[href] = section.title
+            for child in children:
+                if hasattr(child, "href") and hasattr(child, "title"):
+                    href = child.href.split("#")[0]
+                    if child.title:
+                        toc_map[href] = child.title
+
+    if toc_map:
+        print(f"  Found {len(toc_map)} TOC entries in EPUB")
+
+    # Collect all HTML content, injecting <h2> from TOC where missing
+    html_parts = [
+        "<!DOCTYPE html>\n<html>\n<head>\n"
+        '<meta charset="utf-8">\n'
+        f"<title>{title}</title>\n"
+    ]
     if author:
         html_parts.append(f'<meta name="author" content="{author}">\n')
     html_parts.append("</head>\n<body>\n")
@@ -585,12 +618,29 @@ def convert_epub_to_html(epub_path: Path) -> Path:
     for item in book.get_items_of_type(9):  # ITEM_DOCUMENT
         soup = BeautifulSoup(item.get_content(), "lxml")
         body = soup.find("body")
+        body_html = ""
         if body:
-            html_parts.append("".join(str(c) for c in body.children))
+            body_html = "".join(str(c) for c in body.children)
         else:
-            html_parts.append(soup.get_text())
+            body_html = soup.get_text()
 
-    html_parts.append("\n</body>\n</html>")
+        # Check if this spine item has a TOC title
+        item_filename = item.get_name().split("/")[-1]
+        toc_title = toc_map.get(item.get_name()) or toc_map.get(item_filename)
+
+        # If we have a TOC title and the body doesn't already have a heading,
+        # inject one so Stage 1 can detect chapters
+        if toc_title:
+            has_heading = bool(
+                BeautifulSoup(body_html, "lxml").find(["h1", "h2", "h3", "h4"])
+            )
+            if not has_heading:
+                html_parts.append(f"<h2>{toc_title}</h2>\n")
+
+        html_parts.append(body_html)
+        html_parts.append("\n")
+
+    html_parts.append("</body>\n</html>")
 
     output_path = SOURCE_DIR / (epub_path.stem + ".html")
     output_path.write_text("".join(html_parts), encoding="utf-8")
