@@ -774,6 +774,74 @@ def get_chapter_files() -> list[Path]:
     return files
 
 
+SELECTION_FILE = BASE_DIR / "selected_chapters.txt"
+
+
+def filter_chapters(chapter_files: list[Path]) -> list[Path]:
+    """Let the user select which chapters to process. Saves selection to file."""
+    print("\n" + "=" * 60)
+    print("Chapter Selection")
+    print("=" * 60)
+
+    # If a saved selection exists, offer to reuse it
+    if SELECTION_FILE.exists():
+        saved = [
+            line.strip()
+            for line in SELECTION_FILE.read_text().splitlines()
+            if line.strip()
+        ]
+        if saved:
+            matched = [f for f in chapter_files if f.name in saved]
+            if matched:
+                print(f"\nFound saved selection ({len(matched)} chapters):")
+                for f in matched:
+                    print(f"  {f.name}")
+                reuse = input("\nUse this selection? [Y/n] ").strip()
+                if reuse.lower() != "n":
+                    return matched
+                print()
+
+    # Show all chapters and let user exclude
+    print("\nAll chapters found:")
+    for i, f in enumerate(chapter_files, 1):
+        print(f"  {i:3d}. {f.stem}")
+
+    print(
+        "\nEnter chapter numbers to EXCLUDE (comma-separated), "
+        "or press Enter to keep all."
+    )
+    print("Example: 1,2,3,4,5,6,7,8,9  to skip front matter")
+    exclude_input = input("\nExclude: ").strip()
+
+    if not exclude_input:
+        selected = chapter_files
+    else:
+        try:
+            exclude_nums = {
+                int(x.strip()) for x in exclude_input.split(",") if x.strip()
+            }
+        except ValueError:
+            print("Invalid input. Keeping all chapters.")
+            exclude_nums = set()
+
+        selected = [
+            f
+            for i, f in enumerate(chapter_files, 1)
+            if i not in exclude_nums
+        ]
+
+    # Save selection for future runs
+    SELECTION_FILE.write_text(
+        "\n".join(f.name for f in selected) + "\n"
+    )
+
+    print(f"\nSelected {len(selected)} chapters for processing:")
+    for f in selected:
+        print(f"  {f.name}")
+
+    return selected
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Ebook Chapter Processing Pipeline"
@@ -825,10 +893,14 @@ def main():
         print(f"Skipping Stage 2 (starting from stage {start_stage})")
         chapter_files = get_chapter_files()
 
+    # Filter chapters
+    chapter_files = filter_chapters(chapter_files)
+
     if dry_run:
         print("\n" + "=" * 60)
         print("DRY RUN COMPLETE — Stages 1-2 finished.")
         print(f"Review chapter files in: {CHAPTERS_DIR}/")
+        print(f"Selected {len(chapter_files)} chapters for processing.")
         print("Re-run without --dry-run to proceed with API calls.")
         print("=" * 60)
         return

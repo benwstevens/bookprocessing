@@ -2,4 +2,6 @@
 chapters/
 chapter_summaries/
 output/
+selected_chapters.txt
+source/*.html
 __pycache__/
