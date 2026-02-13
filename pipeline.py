@@ -556,21 +556,75 @@ blockquote {
 
 
 # ===========================================================================
+# EPUB-to-HTML conversion
+# ===========================================================================
+def convert_epub_to_html(epub_path: Path) -> Path:
+    """Convert an EPUB file to a single HTML file in the source directory."""
+    from ebooklib import epub as ep
+
+    print(f"Converting EPUB to HTML: {epub_path.name}")
+    book = ep.read_epub(str(epub_path))
+
+    # Collect all HTML content from the EPUB spine
+    html_parts = [
+        "<!DOCTYPE html>\n<html>\n<head>\n"
+        '<meta charset="utf-8">\n'
+    ]
+
+    # Try to get title and author from metadata
+    title = book.get_metadata("DC", "title")
+    title = title[0][0] if title else epub_path.stem
+    author = book.get_metadata("DC", "creator")
+    author = author[0][0] if author else ""
+
+    html_parts.append(f"<title>{title}</title>\n")
+    if author:
+        html_parts.append(f'<meta name="author" content="{author}">\n')
+    html_parts.append("</head>\n<body>\n")
+
+    for item in book.get_items_of_type(9):  # ITEM_DOCUMENT
+        soup = BeautifulSoup(item.get_content(), "lxml")
+        body = soup.find("body")
+        if body:
+            html_parts.append("".join(str(c) for c in body.children))
+        else:
+            html_parts.append(soup.get_text())
+
+    html_parts.append("\n</body>\n</html>")
+
+    output_path = SOURCE_DIR / (epub_path.stem + ".html")
+    output_path.write_text("".join(html_parts), encoding="utf-8")
+    print(f"Converted to: {output_path.name}")
+    return output_path
+
+
+# ===========================================================================
 # Master orchestration
 # ===========================================================================
 def find_source_file() -> Path:
-    """Locate the single HTML source file."""
-    patterns = list(SOURCE_DIR.glob("*.html")) + list(SOURCE_DIR.glob("*.htm"))
-    if not patterns:
-        print(f"ERROR: No HTML files found in {SOURCE_DIR}/")
-        print("Place your source ebook .html file in the source/ directory.")
-        sys.exit(1)
-    if len(patterns) > 1:
-        print(f"WARNING: Multiple HTML files found in {SOURCE_DIR}/:")
-        for p in patterns:
-            print(f"  {p.name}")
-        print("Using the first one.")
-    return patterns[0]
+    """Locate the source file (HTML or EPUB). Convert EPUB to HTML if needed."""
+    html_files = list(SOURCE_DIR.glob("*.html")) + list(SOURCE_DIR.glob("*.htm"))
+    epub_files = list(SOURCE_DIR.glob("*.epub"))
+
+    if html_files:
+        if len(html_files) > 1:
+            print(f"WARNING: Multiple HTML files found in {SOURCE_DIR}/:")
+            for p in html_files:
+                print(f"  {p.name}")
+            print("Using the first one.")
+        return html_files[0]
+
+    if epub_files:
+        if len(epub_files) > 1:
+            print(f"WARNING: Multiple EPUB files found in {SOURCE_DIR}/:")
+            for p in epub_files:
+                print(f"  {p.name}")
+            print("Using the first one.")
+        return convert_epub_to_html(epub_files[0])
+
+    print(f"ERROR: No .html or .epub files found in {SOURCE_DIR}/")
+    print("Place your source ebook file in the source/ directory.")
+    sys.exit(1)
 
 
 def get_chapter_files() -> list[Path]:
