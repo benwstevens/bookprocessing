@@ -7,7 +7,7 @@ RULES:
 - Keep chapter divisions with their headings, but smooth transitions between them.
 - Cut any remaining filler or repetition across chapters, but never cut an entire chapter.
 - The final output should read as a single, unified document — not a collection of separate summaries.
-- Target approximately 10,000 words total. If the input is already close to that, focus on polish rather than cutting. If you need to cut, trim evenly across chapters rather than dropping whole ones.
+- Be as concise as possible while preserving every chapter and its core argument. Do not pad or expand — just polish and remove redundancy. The output length should be driven by content, not a word count target.
 
 FORMATTING — You MUST return your response as valid HTML. Use these tags:
 - <h1> for the book title at the very top

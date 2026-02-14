@@ -598,7 +598,7 @@ def stage5(chapter_files: list[Path], target_words: int) -> Path:
             user_message = (
                 f"BOOK TITLE: {book_title}\n"
                 f"AUTHOR: {book_author}\n"
-                f"TARGET: ~{target_words:,} words total\n\n"
+                f"TOTAL CHAPTERS: {len(distilled_files)} — every one must appear in your output.\n\n"
                 f"Here are the chapter-by-chapter summaries:\n\n"
                 f"{combined_html}"
             )
@@ -611,7 +611,7 @@ def stage5(chapter_files: list[Path], target_words: int) -> Path:
                 try:
                     message = client.messages.create(
                         model="claude-sonnet-4-5-20250929",
-                        max_tokens=16384,
+                        max_tokens=32768,
                         system=coherence_instructions,
                         messages=[{"role": "user", "content": user_message}],
                     )
