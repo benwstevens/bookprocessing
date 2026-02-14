@@ -28,7 +28,7 @@ from shared import (
     resolve_epub_path,
 )
 
-INSTRUCTIONS_FILE = BASE_DIR / "instructions.txt"
+INSTRUCTIONS_FILE = BASE_DIR / "pipeline_instructions.txt"
 
 
 def stage3(chapter_files, output_dir, dry_run=False):
