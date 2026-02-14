@@ -609,13 +609,21 @@ def stage5(chapter_files: list[Path], target_words: int) -> Path:
 
             for attempt in range(max_retries):
                 try:
-                    message = client.messages.create(
+                    # Use streaming for large outputs to avoid timeout
+                    collected_text = []
+                    with client.messages.stream(
                         model="claude-sonnet-4-5-20250929",
                         max_tokens=32768,
                         system=coherence_instructions,
                         messages=[{"role": "user", "content": user_message}],
-                    )
-                    final_html = message.content[0].text
+                    ) as stream:
+                        for text in stream.text_stream:
+                            collected_text.append(text)
+                            # Print a dot every ~500 chars to show progress
+                            if sum(len(t) for t in collected_text) % 2000 < len(text):
+                                print(".", end="", flush=True)
+                    final_html = "".join(collected_text)
+                    print()  # newline after dots
                     break
                 except anthropic.RateLimitError:
                     wait = backoff * (2 ** attempt)
