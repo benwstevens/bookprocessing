@@ -342,19 +342,24 @@ def filter_chapters(
         print(f"  {i:3d}. {f.stem}")
 
     print(
-        "\nEnter chapter numbers to EXCLUDE (comma-separated), "
+        "\nEnter chapter numbers to EXCLUDE (comma-separated, ranges OK), "
         "or press Enter to keep all."
     )
-    print("Example: 1,2,3,4,5,6,7,8,9  to skip front matter")
+    print("Example: 1-9  or  1,2,15-18  to skip front matter")
     exclude_input = input("\nExclude: ").strip()
 
     if not exclude_input:
         selected = chapter_files
     else:
         try:
-            exclude_nums = {
-                int(x.strip()) for x in exclude_input.split(",") if x.strip()
-            }
+            exclude_nums = set()
+            for part in exclude_input.split(","):
+                part = part.strip()
+                if "-" in part:
+                    lo, hi = part.split("-", 1)
+                    exclude_nums.update(range(int(lo), int(hi) + 1))
+                elif part:
+                    exclude_nums.add(int(part))
         except ValueError:
             print("Invalid input. Keeping all chapters.")
             exclude_nums = set()
