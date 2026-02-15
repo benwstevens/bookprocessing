@@ -273,15 +273,25 @@ def split_chapters(html_path: Path, chapter_tag: str, chapters_dir: Path) -> lis
         print(f"ERROR: No <{chapter_tag}> tags found.")
         sys.exit(1)
 
-    chapter_data: list[tuple[str, str]] = []
-    for i, heading in enumerate(headings):
+    # Collect all content between each heading and the next one.
+    # We use string positions rather than DOM sibling traversal,
+    # because headings may be nested inside wrappers (section, header,
+    # div) that prevent find_next_siblings() from reaching body text.
+    body = soup.find("body")
+    full_html = str(body) if body else str(soup)
+
+    heading_positions = []
+    for heading in headings:
+        heading_str = str(heading)
         title = heading.get_text(strip=True)
-        parts = [str(heading)]
-        for sibling in heading.find_next_siblings():
-            if sibling.name == chapter_tag:
-                break
-            parts.append(str(sibling))
-        chapter_html = "\n".join(parts)
+        pos = full_html.find(heading_str)
+        if pos >= 0:
+            heading_positions.append((pos, title))
+
+    chapter_data: list[tuple[str, str]] = []
+    for i, (pos, title) in enumerate(heading_positions):
+        end_pos = heading_positions[i + 1][0] if i + 1 < len(heading_positions) else len(full_html)
+        chapter_html = full_html[pos:end_pos]
         chapter_data.append((title, chapter_html))
 
     chapters_dir.mkdir(parents=True, exist_ok=True)
