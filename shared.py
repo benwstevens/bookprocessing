@@ -97,23 +97,24 @@ def convert_epub_to_html(epub_path: Path, source_dir: Path) -> Path:
     author = book.get_metadata("DC", "creator")
     author = author[0][0] if author else ""
 
-    toc_map: dict[str, str] = {}
+    # toc_map: href -> (title, level)  where level 1 = chapter, 2 = subsection
+    toc_map: dict[str, tuple[str, int]] = {}
     for toc_entry in book.toc:
         if hasattr(toc_entry, "href") and hasattr(toc_entry, "title"):
             href = toc_entry.href.split("#")[0]
             if toc_entry.title:
-                toc_map[href] = toc_entry.title
+                toc_map[href] = (toc_entry.title, 1)
         elif isinstance(toc_entry, tuple) and len(toc_entry) == 2:
             section, children = toc_entry
             if hasattr(section, "href") and hasattr(section, "title"):
                 href = section.href.split("#")[0]
                 if section.title:
-                    toc_map[href] = section.title
+                    toc_map[href] = (section.title, 1)
             for child in children:
                 if hasattr(child, "href") and hasattr(child, "title"):
                     href = child.href.split("#")[0]
                     if child.title:
-                        toc_map[href] = child.title
+                        toc_map[href] = (child.title, 2)
 
     if toc_map:
         print(f"  Found {len(toc_map)} TOC entries in EPUB")
@@ -137,14 +138,16 @@ def convert_epub_to_html(epub_path: Path, source_dir: Path) -> Path:
             body_html = soup.get_text()
 
         item_filename = item.get_name().split("/")[-1]
-        toc_title = toc_map.get(item.get_name()) or toc_map.get(item_filename)
+        toc_entry = toc_map.get(item.get_name()) or toc_map.get(item_filename)
 
-        if toc_title:
+        if toc_entry:
+            toc_title, toc_level = toc_entry
             has_heading = bool(
                 BeautifulSoup(body_html, "lxml").find(["h1", "h2", "h3", "h4"])
             )
             if not has_heading:
-                html_parts.append(f"<h2>{toc_title}</h2>\n")
+                tag = "h2" if toc_level == 1 else "h3"
+                html_parts.append(f"<{tag}>{toc_title}</{tag}>\n")
 
         html_parts.append(body_html)
         html_parts.append("\n")
