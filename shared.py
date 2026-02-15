@@ -142,18 +142,33 @@ def convert_epub_to_html(epub_path: Path, source_dir: Path) -> Path:
 
         if toc_entry:
             toc_title, toc_level = toc_entry
-            has_heading = bool(
-                BeautifulSoup(body_html, "lxml").find(["h1", "h2", "h3", "h4"])
-            )
-            if not has_heading:
+            item_soup = BeautifulSoup(body_html, "lxml")
+            headings = item_soup.find_all(["h1", "h2", "h3", "h4"])
+
+            if not headings:
+                # No heading — inject one at the right level
                 tag = "h2" if toc_level == 1 else "h3"
                 html_parts.append(f"<{tag}>{toc_title}</{tag}>\n")
-            elif toc_level == 2:
-                # Subsection: downgrade h1/h2 to h3 so splitter ignores them
-                sub_soup = BeautifulSoup(body_html, "lxml")
-                for h_tag in sub_soup.find_all(["h1", "h2"]):
+            elif toc_level == 1:
+                # Chapter: upgrade any h3/h4 headings to h2
+                for h_tag in headings:
+                    if h_tag.name in ("h3", "h4"):
+                        h_tag.name = "h2"
+                body_html = "".join(str(c) for c in item_soup.body.children) if item_soup.body else str(item_soup)
+            else:
+                # Subsection: downgrade any h1/h2 headings to h3
+                for h_tag in headings:
+                    if h_tag.name in ("h1", "h2"):
+                        h_tag.name = "h3"
+                body_html = "".join(str(c) for c in item_soup.body.children) if item_soup.body else str(item_soup)
+        else:
+            # Not in TOC at all — downgrade any h2 to h3 to be safe
+            item_soup = BeautifulSoup(body_html, "lxml")
+            h2s = item_soup.find_all("h2")
+            if h2s:
+                for h_tag in h2s:
                     h_tag.name = "h3"
-                body_html = "".join(str(c) for c in sub_soup.body.children) if sub_soup.body else str(sub_soup)
+                body_html = "".join(str(c) for c in item_soup.body.children) if item_soup.body else str(item_soup)
 
         html_parts.append(body_html)
         html_parts.append("\n")
