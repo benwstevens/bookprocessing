@@ -192,7 +192,8 @@ def detect_chapter_tag(html_path: Path) -> str:
 
     scores: dict[str, float] = {}
     chapter_pattern = re.compile(
-        r"(chapter|part|section|book|act|prologue|epilogue)\s*\d*",
+        r"^(chapter|part|section|book|act|prologue|epilogue|introduction|"
+        r"conclusion|foreword|afterword|preface)\s",
         re.IGNORECASE,
     )
 
@@ -201,15 +202,21 @@ def detect_chapter_tag(html_path: Path) -> str:
         if count < 2:
             scores[tag] = 0
             continue
-        score = count
+
         chapter_matches = sum(1 for t in texts if chapter_pattern.search(t))
-        score += chapter_matches * 2
-        numbered = sum(1 for t in texts if re.search(r"\d+", t))
-        score += numbered * 0.5
-        if tag == "h1":
-            score *= 0.6
-        elif tag in ("h2", "h3"):
-            score *= 1.2
+        chapter_ratio = chapter_matches / count if count else 0
+
+        # Base score from count, but diminishing — 10 chapters and 50 chapters
+        # shouldn't be that different
+        score = min(count, 20)
+
+        # Chapter-like text is the strongest signal
+        score += chapter_matches * 10
+
+        # If most headings at this level look like chapters, big bonus
+        if chapter_ratio > 0.3:
+            score *= 2.0
+
         scores[tag] = score
 
     if not scores or max(scores.values()) == 0:
