@@ -4,8 +4,8 @@ Three Python scripts that process ebooks through the Claude API, each producing 
 
 | Script | What it does | Output size |
 |---|---|---|
-| `outliner.py` | **Outliner** — thesis, outline, key concepts, key passages, and critical questions for each chapter | Longer than original |
 | `abridger.py` | **Abridger** — cuts 40-60% of the text while keeping the author's original words | ~50% of original |
+| `outliner.py` | **Outliner** — thesis, outline, key concepts, key passages, and critical questions for each chapter | 30% of original |
 | `distiller.py` | **Distiller** — two-pass hierarchical summarization that condenses a full book into a flowing summary | ~10,000 words (configurable) |
 
 All three output a Kindle-compatible EPUB and a single HTML file.
