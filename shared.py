@@ -97,31 +97,22 @@ def convert_epub_to_html(epub_path: Path, source_dir: Path) -> Path:
     author = book.get_metadata("DC", "creator")
     author = author[0][0] if author else ""
 
-    # toc_map: href -> (title, level)  where level 1 = chapter, 2 = subsection
-    # Level 1 entries always take priority — a child with the same base href
-    # (e.g. c03.xhtml#head-2-21 → c03.xhtml) must not overwrite a parent.
-    toc_map: dict[str, tuple[str, int]] = {}
+    # Build set of top-level TOC hrefs (chapters only, ignore subsections)
+    chapter_hrefs: dict[str, str] = {}  # base href -> title
     for toc_entry in book.toc:
         if hasattr(toc_entry, "href") and hasattr(toc_entry, "title"):
             href = toc_entry.href.split("#")[0]
             if toc_entry.title:
-                toc_map[href] = (toc_entry.title, 1)
+                chapter_hrefs[href] = toc_entry.title
         elif isinstance(toc_entry, tuple) and len(toc_entry) == 2:
             section, children = toc_entry
             if hasattr(section, "href") and hasattr(section, "title"):
                 href = section.href.split("#")[0]
                 if section.title:
-                    toc_map[href] = (section.title, 1)
-            for child in children:
-                if hasattr(child, "href") and hasattr(child, "title"):
-                    href = child.href.split("#")[0]
-                    if child.title:
-                        # Only add if not already mapped as a chapter (level 1)
-                        if href not in toc_map or toc_map[href][1] > 1:
-                            toc_map[href] = (child.title, 2)
+                    chapter_hrefs[href] = section.title
 
-    if toc_map:
-        print(f"  Found {len(toc_map)} TOC entries in EPUB")
+    if chapter_hrefs:
+        print(f"  Found {len(chapter_hrefs)} top-level TOC entries in EPUB")
 
     html_parts = [
         "<!DOCTYPE html>\n<html>\n<head>\n"
@@ -142,37 +133,14 @@ def convert_epub_to_html(epub_path: Path, source_dir: Path) -> Path:
             body_html = soup.get_text()
 
         item_filename = item.get_name().split("/")[-1]
-        toc_entry = toc_map.get(item.get_name()) or toc_map.get(item_filename)
+        toc_title = chapter_hrefs.get(item.get_name()) or chapter_hrefs.get(item_filename)
 
-        if toc_entry:
-            toc_title, toc_level = toc_entry
-            item_soup = BeautifulSoup(body_html, "lxml")
-            headings = item_soup.find_all(["h1", "h2", "h3", "h4"])
-
-            if not headings:
-                # No heading — inject one at the right level
-                tag = "h2" if toc_level == 1 else "h3"
-                html_parts.append(f"<{tag}>{toc_title}</{tag}>\n")
-            elif toc_level == 1:
-                # Chapter: upgrade any h3/h4 headings to h2
-                for h_tag in headings:
-                    if h_tag.name in ("h3", "h4"):
-                        h_tag.name = "h2"
-                body_html = "".join(str(c) for c in item_soup.body.children) if item_soup.body else str(item_soup)
-            else:
-                # Subsection: downgrade any h1/h2 headings to h3
-                for h_tag in headings:
-                    if h_tag.name in ("h1", "h2"):
-                        h_tag.name = "h3"
-                body_html = "".join(str(c) for c in item_soup.body.children) if item_soup.body else str(item_soup)
-        else:
-            # Not in TOC at all — downgrade any h2 to h3 to be safe
-            item_soup = BeautifulSoup(body_html, "lxml")
-            h2s = item_soup.find_all("h2")
-            if h2s:
-                for h_tag in h2s:
-                    h_tag.name = "h3"
-                body_html = "".join(str(c) for c in item_soup.body.children) if item_soup.body else str(item_soup)
+        if toc_title:
+            has_heading = bool(
+                BeautifulSoup(body_html, "lxml").find(["h1", "h2", "h3", "h4"])
+            )
+            if not has_heading:
+                html_parts.append(f"<h2>{toc_title}</h2>\n")
 
         html_parts.append(body_html)
         html_parts.append("\n")
