@@ -98,6 +98,8 @@ def convert_epub_to_html(epub_path: Path, source_dir: Path) -> Path:
     author = author[0][0] if author else ""
 
     # toc_map: href -> (title, level)  where level 1 = chapter, 2 = subsection
+    # Level 1 entries always take priority — a child with the same base href
+    # (e.g. c03.xhtml#head-2-21 → c03.xhtml) must not overwrite a parent.
     toc_map: dict[str, tuple[str, int]] = {}
     for toc_entry in book.toc:
         if hasattr(toc_entry, "href") and hasattr(toc_entry, "title"):
@@ -114,7 +116,9 @@ def convert_epub_to_html(epub_path: Path, source_dir: Path) -> Path:
                 if hasattr(child, "href") and hasattr(child, "title"):
                     href = child.href.split("#")[0]
                     if child.title:
-                        toc_map[href] = (child.title, 2)
+                        # Only add if not already mapped as a chapter (level 1)
+                        if href not in toc_map or toc_map[href][1] > 1:
+                            toc_map[href] = (child.title, 2)
 
     if toc_map:
         print(f"  Found {len(toc_map)} TOC entries in EPUB")
