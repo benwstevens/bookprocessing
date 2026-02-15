@@ -10,6 +10,8 @@ Three Python scripts that process ebooks through the Claude API, each producing 
 
 All three output a Kindle-compatible EPUB and a single HTML file.
 
+Also includes `papercopyprep.py`, a utility that converts scanned/OCR'd PDFs into EPUBs so physical books can be processed too.
+
 ---
 
 ## Prerequisites
@@ -35,7 +37,7 @@ cd bookprocessing
 pip3 install -r requirements.txt
 ```
 
-This installs: `anthropic`, `ebooklib`, `beautifulsoup4`, `lxml`
+This installs: `anthropic`, `ebooklib`, `beautifulsoup4`, `lxml`, `pymupdf`
 
 ### 3. Add your API key
 
@@ -57,7 +59,7 @@ Save with **Ctrl+O**, **Enter**, **Ctrl+X**.
 
 ### 4. Add your ebook
 
-Drop your `.epub` file into the `summaryscript` folder (alongside the `.py` files). All three scripts accept EPUB files directly.
+Drop your `.epub` file into the `bookprocessing` folder (alongside the `.py` files). All three scripts accept EPUB files directly. If you only have a physical copy, see [Processing a physical book](#processing-a-physical-book) below.
 
 ---
 
@@ -115,6 +117,47 @@ python3 distiller.py mybook.epub --stage 3       # Re-run API calls only
 
 ---
 
+## Processing a physical book
+
+If a book only exists in print, you can scan it and convert it to EPUB:
+
+### 1. Scan the book
+
+Cut the spine (or use a V-shaped book scanner) and feed the pages through a document scanner. Most scanners (like ScanSnap) output a searchable PDF with OCR built in.
+
+### 2. OCR (if your scanner didn't do it)
+
+If your PDF is image-only (you can't select text in it), run OCR first:
+
+```bash
+brew install ocrmypdf          # One-time install
+ocrmypdf scanned.pdf searchable.pdf
+```
+
+### 3. Convert to EPUB
+
+```bash
+python3 papercopyprep.py searchable.pdf
+```
+
+This extracts the text, detects chapter boundaries, cleans up OCR artifacts (broken hyphens, stray page numbers, bad spacing), and outputs an EPUB file.
+
+You can also specify the title and author up front:
+
+```bash
+python3 papercopyprep.py searchable.pdf --title "The Book Title" --author "Author Name"
+```
+
+The output EPUB appears in the same folder as the PDF. From there, use it like any other EPUB:
+
+```bash
+python3 outliner.py "The_Book_Title.epub"
+```
+
+> **Note:** OCR quality varies. If the scan is blurry or the book uses unusual fonts, you may see garbled text. Check the EPUB output before running it through the processing scripts.
+
+---
+
 ## How it works
 
 Each script follows the same five stages:
@@ -146,7 +189,7 @@ books/
   mybook/
     source/              # Original EPUB + converted HTML
     chapters/            # Individual chapter HTML files
-    chapter_summaries/   # Study companion output (pipeline.py)
+    chapter_summaries/   # Study companion output (outliner.py)
     abridged_chapters/   # Abridged output (abridger.py)
     distilled_chapters/  # Distilled output (distiller.py)
     output/              # Final EPUB and HTML files
@@ -213,6 +256,7 @@ bookprocessing/
   outliner.py                        # Outliner script (study companion)
   abridger.py                        # Abridger script
   distiller.py                       # Distiller script
+  papercopyprep.py                   # PDF-to-EPUB converter for scanned books
   shared.py                          # Shared utilities (used by all three)
   outliner_instructions.txt          # Instructions for outliner
   abridger_instructions.txt          # Instructions for abridger
