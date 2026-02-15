@@ -1,10 +1,10 @@
-# Ebook Processing Pipeline
+# Book Processing
 
 Three Python scripts that process ebooks through the Claude API, each producing a different kind of output:
 
 | Script | What it does | Output size |
 |---|---|---|
-| `pipeline.py` | **Study Companion** — thesis, outline, key concepts, key passages, and critical questions for each chapter | Longer than original |
+| `outliner.py` | **Outliner** — thesis, outline, key concepts, key passages, and critical questions for each chapter | Longer than original |
 | `abridger.py` | **Abridger** — cuts 40-60% of the text while keeping the author's original words | ~50% of original |
 | `distiller.py` | **Distiller** — two-pass hierarchical summarization that condenses a full book into a flowing summary | ~10,000 words (configurable) |
 
@@ -25,8 +25,8 @@ All three output a Kindle-compatible EPUB and a single HTML file.
 
 ```bash
 cd ~/Desktop
-git clone https://github.com/benwstevens/summaryscript.git
-cd summaryscript
+git clone https://github.com/benwstevens/bookprocessing.git
+cd bookprocessing
 ```
 
 ### 2. Install dependencies
@@ -39,7 +39,7 @@ This installs: `anthropic`, `ebooklib`, `beautifulsoup4`, `lxml`
 
 ### 3. Add your API key
 
-Create a file called `.env` in the `summaryscript` folder:
+Create a file called `.env` in the `bookprocessing` folder:
 
 ```bash
 nano .env
@@ -66,15 +66,15 @@ Drop your `.epub` file into the `summaryscript` folder (alongside the `.py` file
 Open Terminal, navigate to the project folder, and run any script:
 
 ```bash
-cd ~/Desktop/summaryscript
+cd ~/Desktop/bookprocessing
 ```
 
-### Study Companion (pipeline.py)
+### Outliner (outliner.py)
 
 Produces a detailed chapter-by-chapter analysis: thesis, outline, key concepts, key passages, and critical questions.
 
 ```bash
-python3 pipeline.py mybook.epub
+python3 outliner.py mybook.epub
 ```
 
 ### Abridger (abridger.py)
@@ -162,7 +162,7 @@ These scripts use the Claude API, which charges per token. Rough estimates for a
 
 | Script | Estimated cost |
 |---|---|
-| Pipeline (Study Companion) | ~$3-6 |
+| Outliner | ~$3-6 |
 | Abridger | ~$5-10 |
 | Distiller | ~$4-8 |
 
@@ -176,7 +176,7 @@ Each script reads its Claude instructions from a plain text file:
 
 | Script | Instructions file |
 |---|---|
-| `pipeline.py` | `pipeline_instructions.txt` |
+| `outliner.py` | `outliner_instructions.txt` |
 | `abridger.py` | `abridger_instructions.txt` |
 | `distiller.py` | `distiller_instructions.txt` + `distiller_coherence_instructions.txt` |
 
@@ -209,12 +209,12 @@ Open System Settings > Displays > Advanced > uncheck "Automatically turn off dis
 ## Project structure
 
 ```
-summaryscript/
-  pipeline.py                        # Study companion script
+bookprocessing/
+  outliner.py                        # Outliner script (study companion)
   abridger.py                        # Abridger script
   distiller.py                       # Distiller script
   shared.py                          # Shared utilities (used by all three)
-  pipeline_instructions.txt          # Instructions for study companion
+  outliner_instructions.txt          # Instructions for outliner
   abridger_instructions.txt          # Instructions for abridger
   distiller_instructions.txt         # Instructions for distiller (per-chapter pass)
   distiller_coherence_instructions.txt  # Instructions for distiller (coherence pass)

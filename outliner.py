@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Ebook Chapter Processing Pipeline (Study Companion)
+Ebook Chapter Outliner (Study Companion)
 
 Splits an ebook into chapters and sends each to Claude for analysis,
 producing thesis, outline, key concepts, key passages, and critical
 questions per chapter. Assembles results into an EPUB.
 
 Usage:
-    python3 pipeline.py mybook.epub              # Run all stages
-    python3 pipeline.py mybook.epub --stage 3    # Re-run from stage 3
-    python3 pipeline.py mybook.epub --dry-run    # Stages 1-2 only
+    python3 outliner.py mybook.epub              # Run all stages
+    python3 outliner.py mybook.epub --stage 3    # Re-run from stage 3
+    python3 outliner.py mybook.epub --dry-run    # Stages 1-2 only
 """
 
 import argparse
@@ -28,7 +28,7 @@ from shared import (
     resolve_epub_path,
 )
 
-INSTRUCTIONS_FILE = BASE_DIR / "pipeline_instructions.txt"
+INSTRUCTIONS_FILE = BASE_DIR / "outliner_instructions.txt"
 
 
 def stage3(chapter_files, output_dir, dry_run=False):
