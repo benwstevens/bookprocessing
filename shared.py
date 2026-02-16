@@ -530,16 +530,11 @@ def detect_book_metadata(source_dir: Path) -> tuple[str, str]:
 def wrap_response_html(response_text: str, chapter_path: Path, suffix: str) -> str:
     """Convert Markdown if needed, wrap in full HTML document."""
     response_text = markdown_to_html(response_text)
+    title = chapter_path.stem
 
     if not re.search(r"<\w+[\s>]", response_text):
-        original = chapter_path.read_text(encoding="utf-8")
-        title_match = re.search(r"<title>(.*?)</title>", original)
-        title = title_match.group(1) if title_match else chapter_path.stem
         response_text = f"<h2>{title}</h2>\n<p>{response_text}</p>\n"
 
-    original = chapter_path.read_text(encoding="utf-8")
-    title_match = re.search(r"<title>(.*?)</title>", original)
-    title = title_match.group(1) if title_match else chapter_path.stem
     response_text = (
         "<!DOCTYPE html>\n<html>\n<head>\n"
         '<meta charset="utf-8">\n'
