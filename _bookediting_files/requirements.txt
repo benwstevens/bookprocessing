@@ -1,4 +1,0 @@
-anthropic
-ebooklib
-beautifulsoup4
-lxml
