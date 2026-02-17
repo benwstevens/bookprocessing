@@ -257,6 +257,12 @@ def promote_styled_headings(
     so that the rest of the pipeline (scan_headings, build_chapter_candidates,
     etc.) can work with standard heading tags.
 
+    When the promoted heading levels would collide with heading tags that already
+    exist in the HTML, existing headings are **demoted** (shifted down) to make
+    room.  For example, if ``div.cpt`` is promoted to ``<h1>`` and the document
+    already contains ``<h1>`` chapter headings, those existing ``<h1>`` tags are
+    shifted to ``<h3>`` (or lower) so the hierarchy stays clean.
+
     Args:
         docs: OrderedDict from ``parse_content_files()`` — mutated in place.
         heading_map: Optional custom mapping of CSS class → heading tag.
@@ -291,8 +297,86 @@ def promote_styled_headings(
     if not active_map:
         return 0
 
+    # ------------------------------------------------------------------
+    # 1. Scan: figure out which promotions would fire and what heading
+    #    levels already exist in the documents.
+    # ------------------------------------------------------------------
+    promotion_levels: set[int] = set()   # levels the promotions will occupy
+    existing_levels: set[int] = set()    # levels already present as h-tags
+
+    for href, (soup, _body_html) in docs.items():
+        # Check existing heading tags
+        for level in range(1, 7):
+            if soup.find(f"h{level}"):
+                existing_levels.add(level)
+
+        # Check which promotions would fire
+        for el in soup.find_all(["div", "p", "span"]):
+            classes = el.get("class", [])
+            if not classes:
+                continue
+            for cls in classes:
+                cls_lower = cls.lower()
+                if cls_lower in active_map:
+                    text = el.get_text(strip=True)
+                    if text and len(text) <= 200:
+                        tag = active_map[cls_lower]
+                        promotion_levels.add(int(tag[1]))
+                    break
+
+    if not promotion_levels:
+        print("\n--- Heading Promotion: no promotable elements found ---")
+        return 0
+
+    # ------------------------------------------------------------------
+    # 2. Compute demotion shift if promotion targets collide with
+    #    existing heading levels.
+    # ------------------------------------------------------------------
+    overlap = promotion_levels & existing_levels
+    shift = 0
+    if overlap:
+        # Shift existing headings down by enough to clear all promotion levels.
+        # E.g. promotions use {1,2}, existing has {1,2} → shift existing by 2.
+        max_promo = max(promotion_levels)
+        min_existing = min(existing_levels)
+        if min_existing <= max_promo:
+            shift = max_promo - min_existing + 1
+            # Clamp: can't push past h6
+            max_existing = max(existing_levels)
+            if max_existing + shift > 6:
+                shift = 6 - max_existing
+            if shift < 1:
+                shift = 1
+
+    demotion_summary: dict[str, str] = {}  # "h1 -> h3"
+
+    if shift > 0:
+        # Demote existing headings in every document (high levels first to
+        # avoid collisions within the same pass).
+        for href, (soup, _body_html) in list(docs.items()):
+            changed = False
+            for old_level in sorted(existing_levels, reverse=True):
+                new_level = min(old_level + shift, 6)
+                old_tag = f"h{old_level}"
+                new_tag = f"h{new_level}"
+                for el in soup.find_all(old_tag):
+                    el.name = new_tag
+                    changed = True
+                if old_tag != new_tag:
+                    demotion_summary[old_tag] = new_tag
+            if changed:
+                body = soup.find("body")
+                if body:
+                    new_body_html = "".join(str(c) for c in body.children)
+                else:
+                    new_body_html = str(soup)
+                docs[href] = (soup, new_body_html)
+
+    # ------------------------------------------------------------------
+    # 3. Promote: rewrite div/p/span elements to heading tags.
+    # ------------------------------------------------------------------
     total_promoted = 0
-    promotion_summary: dict[str, list[str]] = {}  # "div.cls -> h2" -> [texts]
+    promotion_summary: dict[str, list[str]] = {}
 
     for href, (soup, _body_html) in list(docs.items()):
         promoted_in_file = 0
@@ -305,7 +389,6 @@ def promote_styled_headings(
             target_tag = None
             matched_class = None
 
-            # Check each class on the element against the map
             for cls in classes:
                 cls_lower = cls.lower()
                 if cls_lower in active_map:
@@ -318,10 +401,8 @@ def promote_styled_headings(
 
             text = el.get_text(strip=True)
             if not text or len(text) > 200:
-                # Skip empty elements or very long text (unlikely to be a heading)
                 continue
 
-            # Promote: change the tag name in-place
             original_tag = el.name
             el.name = target_tag
 
@@ -330,7 +411,6 @@ def promote_styled_headings(
             promotion_summary.setdefault(key, []).append(text)
 
         if promoted_in_file:
-            # Rebuild body_html from the modified soup
             body = soup.find("body")
             if body:
                 new_body_html = "".join(str(c) for c in body.children)
@@ -339,9 +419,15 @@ def promote_styled_headings(
             docs[href] = (soup, new_body_html)
             total_promoted += promoted_in_file
 
-    # Report
-    if total_promoted:
+    # ------------------------------------------------------------------
+    # 4. Report
+    # ------------------------------------------------------------------
+    if total_promoted or demotion_summary:
         print(f"\n--- Heading Promotion ({total_promoted} elements promoted) ---")
+        if demotion_summary:
+            print(f"  Demoted existing headings to make room:")
+            for old_tag, new_tag in sorted(demotion_summary.items()):
+                print(f"    <{old_tag}> -> <{new_tag}>")
         for key in sorted(promotion_summary.keys()):
             texts = promotion_summary[key]
             print(f"  {key}: {len(texts)} element(s)")
