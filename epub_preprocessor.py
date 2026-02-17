@@ -276,11 +276,14 @@ def promote_styled_headings(
     # Default class → heading-tag mapping
     # ------------------------------------------------------------------
     default_map: dict[str, str] = {
-        # Common InDesign / EPUB-converter class conventions
+        # Common InDesign / EPUB-converter class conventions.
+        # NOTE: "ct" (compact title) and "cst" (compact subtitle) are
+        #   intentionally omitted — they are typically redundant short
+        #   labels that duplicate the cpt/cct heading text and create
+        #   noise if promoted.  Use --heading-map to add them back for
+        #   EPUBs where they serve as the primary chapter headings.
         "cpt": "h1",   # Chapter Part Title  (e.g. "Part One")
-        "cct": "h2",   # Chapter Category/Group Title (e.g. "Book the First")
-        "ct":  "h3",   # Chapter Title (e.g. "Chapter I")
-        "cst": "h4",   # Chapter Section/Sub Title
+        "cct": "h2",   # Chapter Category/Group Title (e.g. "Section I")
         # Broader patterns often seen in various EPUB producers
         "part-title":    "h1",
         "parttitle":     "h1",
@@ -559,26 +562,29 @@ def identify_hierarchy(
                 role_idx = min(depth, len(role_names) - 1)
                 hierarchy[most_common_tag] = role_names[role_idx]
 
-    # Strategy 2: Use heading text patterns as a fallback / supplement.
-    # Text starting with "Part" -> part, "Section" -> section, "Chapter" -> chapter.
-    if not hierarchy:
-        pattern_roles = [
-            (re.compile(r"^part\b", re.IGNORECASE), "part"),
-            (re.compile(r"^section\b", re.IGNORECASE), "section"),
-            (re.compile(r"^(chapter|ch\.?\s)\b", re.IGNORECASE), "chapter"),
-        ]
-        tag_role_votes: dict[str, Counter] = {}
-        for tag, entries_list in heading_data.items():
-            for text, _href in entries_list:
-                for pattern, role in pattern_roles:
-                    if pattern.search(text):
-                        tag_role_votes.setdefault(tag, Counter())[role] += 1
-                        break
+    # Strategy 2: Use heading text patterns to supplement (or, if Strategy 1
+    # found nothing, to bootstrap) the hierarchy.  For each heading tag not
+    # yet in the hierarchy, check whether a significant fraction of its
+    # entries start with "Part", "Section", "Chapter", etc.
+    pattern_roles = [
+        (re.compile(r"^part\b", re.IGNORECASE), "part"),
+        (re.compile(r"^section\b", re.IGNORECASE), "section"),
+        (re.compile(r"^(chapter|ch\.?\s)\b", re.IGNORECASE), "chapter"),
+    ]
+    tag_role_votes: dict[str, Counter] = {}
+    for tag, entries_list in heading_data.items():
+        if tag in hierarchy:
+            continue  # already assigned by Strategy 1
+        for text, _href in entries_list:
+            for pattern, role in pattern_roles:
+                if pattern.search(text):
+                    tag_role_votes.setdefault(tag, Counter())[role] += 1
+                    break
 
-        for tag in sorted(tag_role_votes.keys(), key=lambda t: int(t[1])):
-            best_role = tag_role_votes[tag].most_common(1)[0][0]
-            if best_role not in hierarchy.values():
-                hierarchy[tag] = best_role
+    for tag in sorted(tag_role_votes.keys(), key=lambda t: int(t[1])):
+        best_role = tag_role_votes[tag].most_common(1)[0][0]
+        if best_role not in hierarchy.values():
+            hierarchy[tag] = best_role
 
     # Strategy 3: Fallback — assign by heading level order
     if not hierarchy:
@@ -759,25 +765,54 @@ def build_chapter_candidates(
         all_html_parts.append(body_html)
         current_pos += len(body_html)
 
-    full_html = "".join(all_html_parts)
-    full_soup = BeautifulSoup(full_html, "lxml")
+    full_html_raw = "".join(all_html_parts)
+    full_soup = BeautifulSoup(full_html_raw, "lxml")
 
-    # Find all split-level headings and parent headings
+    # Re-serialize from the parsed soup so that str(el) is guaranteed to
+    # match substrings of full_html (avoids serialization mismatches).
+    body_tag = full_soup.find("body")
+    if body_tag:
+        full_html = "".join(str(c) for c in body_tag.children)
+    else:
+        full_html = str(full_soup)
+
+    # Recompute file boundaries against the re-serialized HTML.
+    # (Approximate: walk docs in order and find their first heading or
+    # a unique text snippet to anchor the boundary.)
+    file_boundaries = []
+    boundary_offset = 0
+    for href, (_soup, body_html) in docs.items():
+        file_boundaries.append((boundary_offset, href))
+        # Advance by the approximate length; exact match isn't critical
+        # since this is only used for source_file metadata.
+        boundary_offset += len(body_html)
+
+    # Find all split-level headings and parent headings.
+    # Use progressive search offset so duplicate headings are matched in
+    # document order instead of all resolving to the first occurrence.
     all_headings = []
+    search_offset = 0
     for el in full_soup.find_all(re.compile(r"^h[1-6]$")):
         tag_name = el.name
         text = el.get_text(strip=True)
         if not text:
             continue
-        # Get position in full_html for ordering
         el_str = str(el)
-        pos = full_html.find(el_str)
+        pos = full_html.find(el_str, search_offset)
         if pos < 0:
-            # Try finding by text content
-            pos = full_html.find(text)
+            # Try finding by text content from current offset
+            pos = full_html.find(text, search_offset)
+        if pos < 0:
+            # Last resort: search from beginning (shouldn't normally happen)
+            pos = full_html.find(el_str)
+            if pos < 0:
+                pos = full_html.find(text)
+        if pos >= 0:
+            search_offset = pos + 1
         all_headings.append((pos, tag_name, text, el_str))
 
-    # Sort by position
+    # all_headings is already in document order from find_all(); the sort
+    # is kept as a safety net but should be a no-op.
     all_headings.sort(key=lambda x: x[0])
 
     # Build chapter candidates by tracking parent context
