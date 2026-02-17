@@ -245,6 +245,116 @@ def detect_non_standard_headings(docs: OrderedDict) -> list[tuple[str, str, str]
     return results
 
 
+def promote_styled_headings(
+    docs: OrderedDict,
+    heading_map: dict[str, str] | None = None,
+) -> int:
+    """Promote div/p/span elements with known CSS classes to semantic heading tags.
+
+    Many EPUBs (especially those converted from InDesign or Word) use styled
+    ``<div>`` or ``<p>`` elements with class names like ``cpt``, ``ct``, ``cst``
+    instead of ``<h1>``–``<h6>``.  This function rewrites those elements in-place
+    so that the rest of the pipeline (scan_headings, build_chapter_candidates,
+    etc.) can work with standard heading tags.
+
+    Args:
+        docs: OrderedDict from ``parse_content_files()`` — mutated in place.
+        heading_map: Optional custom mapping of CSS class → heading tag.
+            Example: ``{"mypart": "h1", "mychap": "h2"}``.
+            When *None*, the built-in default map is used.
+
+    Returns:
+        The total number of elements promoted across all documents.
+    """
+    # ------------------------------------------------------------------
+    # Default class → heading-tag mapping
+    # ------------------------------------------------------------------
+    default_map: dict[str, str] = {
+        # Common InDesign / EPUB-converter class conventions
+        "cpt": "h1",   # Chapter Part Title  (e.g. "Part One")
+        "cct": "h2",   # Chapter Category/Group Title (e.g. "Book the First")
+        "ct":  "h3",   # Chapter Title (e.g. "Chapter I")
+        "cst": "h4",   # Chapter Section/Sub Title
+        # Broader patterns often seen in various EPUB producers
+        "part-title":    "h1",
+        "parttitle":     "h1",
+        "book-title":    "h1",
+        "booktitle":     "h1",
+        "chapter-title": "h2",
+        "chaptertitle":  "h2",
+        "section-title": "h3",
+        "sectiontitle":  "h3",
+    }
+
+    active_map = heading_map if heading_map is not None else default_map
+
+    if not active_map:
+        return 0
+
+    total_promoted = 0
+    promotion_summary: dict[str, list[str]] = {}  # "div.cls -> h2" -> [texts]
+
+    for href, (soup, _body_html) in list(docs.items()):
+        promoted_in_file = 0
+
+        for el in soup.find_all(["div", "p", "span"]):
+            classes = el.get("class", [])
+            if not classes:
+                continue
+
+            target_tag = None
+            matched_class = None
+
+            # Check each class on the element against the map
+            for cls in classes:
+                cls_lower = cls.lower()
+                if cls_lower in active_map:
+                    target_tag = active_map[cls_lower]
+                    matched_class = cls_lower
+                    break
+
+            if target_tag is None:
+                continue
+
+            text = el.get_text(strip=True)
+            if not text or len(text) > 200:
+                # Skip empty elements or very long text (unlikely to be a heading)
+                continue
+
+            # Promote: change the tag name in-place
+            original_tag = el.name
+            el.name = target_tag
+
+            promoted_in_file += 1
+            key = f"{original_tag}.{matched_class} -> <{target_tag}>"
+            promotion_summary.setdefault(key, []).append(text)
+
+        if promoted_in_file:
+            # Rebuild body_html from the modified soup
+            body = soup.find("body")
+            if body:
+                new_body_html = "".join(str(c) for c in body.children)
+            else:
+                new_body_html = str(soup)
+            docs[href] = (soup, new_body_html)
+            total_promoted += promoted_in_file
+
+    # Report
+    if total_promoted:
+        print(f"\n--- Heading Promotion ({total_promoted} elements promoted) ---")
+        for key in sorted(promotion_summary.keys()):
+            texts = promotion_summary[key]
+            print(f"  {key}: {len(texts)} element(s)")
+            for t in texts[:5]:
+                print(f"       . {t[:80]}")
+            if len(texts) > 5:
+                print(f"       ... and {len(texts) - 5} more")
+    else:
+        print("\n--- Heading Promotion: no promotable elements found ---")
+
+    return total_promoted
+
+
 def cross_reference_toc_headings(
     toc_entries: list[TOCEntry],
     docs: OrderedDict,
@@ -397,6 +507,7 @@ def identify_hierarchy(
 def run_structural_audit(
     book: ep.EpubBook,
     epub_path: Path,
+    heading_map: dict[str, str] | None = None,
 ) -> dict:
     """Run Phase 1: Structural Audit. Returns audit results dict."""
     print("\n" + "=" * 65)
@@ -424,6 +535,9 @@ def run_structural_audit(
 
     # 3. Parse content files
     docs = parse_content_files(book)
+
+    # 3b. Promote styled divs/paragraphs to semantic heading tags
+    promote_styled_headings(docs, heading_map=heading_map)
 
     # 4. Scan headings
     heading_data = scan_headings(docs)
@@ -1051,6 +1165,15 @@ Examples:
         "--manifest",
         help="Path to a previous manifest JSON to replay selections",
     )
+    parser.add_argument(
+        "--heading-map",
+        help=(
+            "Custom CSS-class to heading-tag mapping as a JSON string or "
+            "path to a JSON file.  Example: "
+            '\'{"mypart": "h1", "mychap": "h2"}\' '
+            "or  heading_map.json"
+        ),
+    )
     return parser
 
 
@@ -1078,9 +1201,38 @@ def main():
     if args.exclude_keywords:
         exclude_keywords = [kw.strip() for kw in args.exclude_keywords.split(",") if kw.strip()]
 
+    # Parse heading map
+    heading_map = None
+    if args.heading_map:
+        raw = args.heading_map.strip()
+        if raw.startswith("{"):
+            # Inline JSON string
+            try:
+                heading_map = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                print(f"ERROR: Invalid JSON in --heading-map: {exc}")
+                sys.exit(1)
+        else:
+            # Treat as a file path
+            hm_path = Path(raw).resolve()
+            if not hm_path.exists():
+                print(f"ERROR: Heading-map file not found: {raw}")
+                sys.exit(1)
+            try:
+                heading_map = json.loads(hm_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                print(f"ERROR: Invalid JSON in heading-map file: {exc}")
+                sys.exit(1)
+        # Normalize: keys to lowercase, values to lowercase h-tag
+        heading_map = {
+            k.lower(): v.lower() if v.lower().startswith("h") else f"h{v}"
+            for k, v in heading_map.items()
+        }
+        print(f"  Custom heading map: {heading_map}")
+
     # --- Phase 1: Structural Audit ---
     book = read_epub(epub_path)
-    audit = run_structural_audit(book, epub_path)
+    audit = run_structural_audit(book, epub_path, heading_map=heading_map)
 
     if args.audit_only:
         print("\n" + "=" * 65)
