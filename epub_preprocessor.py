@@ -245,6 +245,205 @@ def detect_non_standard_headings(docs: OrderedDict) -> list[tuple[str, str, str]
     return results
 
 
+def promote_styled_headings(
+    docs: OrderedDict,
+    heading_map: dict[str, str] | None = None,
+) -> int:
+    """Promote div/p/span elements with known CSS classes to semantic heading tags.
+
+    Many EPUBs (especially those converted from InDesign or Word) use styled
+    ``<div>`` or ``<p>`` elements with class names like ``cpt``, ``ct``, ``cst``
+    instead of ``<h1>``–``<h6>``.  This function rewrites those elements in-place
+    so that the rest of the pipeline (scan_headings, build_chapter_candidates,
+    etc.) can work with standard heading tags.
+
+    When the promoted heading levels would collide with heading tags that already
+    exist in the HTML, existing headings are **demoted** (shifted down) to make
+    room.  For example, if ``div.cpt`` is promoted to ``<h1>`` and the document
+    already contains ``<h1>`` chapter headings, those existing ``<h1>`` tags are
+    shifted to ``<h3>`` (or lower) so the hierarchy stays clean.
+
+    Args:
+        docs: OrderedDict from ``parse_content_files()`` — mutated in place.
+        heading_map: Optional custom mapping of CSS class → heading tag.
+            Example: ``{"mypart": "h1", "mychap": "h2"}``.
+            When *None*, the built-in default map is used.
+
+    Returns:
+        The total number of elements promoted across all documents.
+    """
+    # ------------------------------------------------------------------
+    # Default class → heading-tag mapping
+    # ------------------------------------------------------------------
+    default_map: dict[str, str] = {
+        # Common InDesign / EPUB-converter class conventions.
+        # NOTE: "ct" (compact title) and "cst" (compact subtitle) are
+        #   intentionally omitted — they are typically redundant short
+        #   labels that duplicate the cpt/cct heading text and create
+        #   noise if promoted.  Use --heading-map to add them back for
+        #   EPUBs where they serve as the primary chapter headings.
+        "cpt": "h1",   # Chapter Part Title  (e.g. "Part One")
+        "cct": "h2",   # Chapter Category/Group Title (e.g. "Section I")
+        # Broader patterns often seen in various EPUB producers
+        "part-title":    "h1",
+        "parttitle":     "h1",
+        "book-title":    "h1",
+        "booktitle":     "h1",
+        "chapter-title": "h2",
+        "chaptertitle":  "h2",
+        "section-title": "h3",
+        "sectiontitle":  "h3",
+    }
+
+    active_map = heading_map if heading_map is not None else default_map
+
+    if not active_map:
+        return 0
+
+    # ------------------------------------------------------------------
+    # 1. Scan: figure out which promotions would fire and what heading
+    #    levels already exist in the documents.
+    # ------------------------------------------------------------------
+    promotion_levels: set[int] = set()   # levels the promotions will occupy
+    existing_levels: set[int] = set()    # levels already present as h-tags
+
+    for href, (soup, _body_html) in docs.items():
+        # Check existing heading tags
+        for level in range(1, 7):
+            if soup.find(f"h{level}"):
+                existing_levels.add(level)
+
+        # Check which promotions would fire
+        for el in soup.find_all(["div", "p", "span"]):
+            classes = el.get("class", [])
+            if not classes:
+                continue
+            for cls in classes:
+                cls_lower = cls.lower()
+                if cls_lower in active_map:
+                    text = el.get_text(strip=True)
+                    if text and len(text) <= 200:
+                        tag = active_map[cls_lower]
+                        promotion_levels.add(int(tag[1]))
+                    break
+
+    if not promotion_levels:
+        print("\n--- Heading Promotion: no promotable elements found ---")
+        return 0
+
+    # ------------------------------------------------------------------
+    # 2. Compute demotion shift if promotion targets collide with
+    #    existing heading levels.
+    # ------------------------------------------------------------------
+    overlap = promotion_levels & existing_levels
+    shift = 0
+    if overlap:
+        # Shift existing headings down by enough to clear all promotion levels.
+        # E.g. promotions use {1,2}, existing has {1,2} → shift existing by 2.
+        max_promo = max(promotion_levels)
+        min_existing = min(existing_levels)
+        if min_existing <= max_promo:
+            shift = max_promo - min_existing + 1
+            # Clamp: can't push past h6
+            max_existing = max(existing_levels)
+            if max_existing + shift > 6:
+                shift = 6 - max_existing
+            if shift < 1:
+                shift = 1
+
+    demotion_summary: dict[str, str] = {}  # "h1 -> h3"
+
+    if shift > 0:
+        # Demote existing headings in every document (high levels first to
+        # avoid collisions within the same pass).
+        for href, (soup, _body_html) in list(docs.items()):
+            changed = False
+            for old_level in sorted(existing_levels, reverse=True):
+                new_level = min(old_level + shift, 6)
+                old_tag = f"h{old_level}"
+                new_tag = f"h{new_level}"
+                for el in soup.find_all(old_tag):
+                    el.name = new_tag
+                    changed = True
+                if old_tag != new_tag:
+                    demotion_summary[old_tag] = new_tag
+            if changed:
+                body = soup.find("body")
+                if body:
+                    new_body_html = "".join(str(c) for c in body.children)
+                else:
+                    new_body_html = str(soup)
+                docs[href] = (soup, new_body_html)
+
+    # ------------------------------------------------------------------
+    # 3. Promote: rewrite div/p/span elements to heading tags.
+    # ------------------------------------------------------------------
+    total_promoted = 0
+    promotion_summary: dict[str, list[str]] = {}
+
+    for href, (soup, _body_html) in list(docs.items()):
+        promoted_in_file = 0
+
+        for el in soup.find_all(["div", "p", "span"]):
+            classes = el.get("class", [])
+            if not classes:
+                continue
+
+            target_tag = None
+            matched_class = None
+
+            for cls in classes:
+                cls_lower = cls.lower()
+                if cls_lower in active_map:
+                    target_tag = active_map[cls_lower]
+                    matched_class = cls_lower
+                    break
+
+            if target_tag is None:
+                continue
+
+            text = el.get_text(strip=True)
+            if not text or len(text) > 200:
+                continue
+
+            original_tag = el.name
+            el.name = target_tag
+
+            promoted_in_file += 1
+            key = f"{original_tag}.{matched_class} -> <{target_tag}>"
+            promotion_summary.setdefault(key, []).append(text)
+
+        if promoted_in_file:
+            body = soup.find("body")
+            if body:
+                new_body_html = "".join(str(c) for c in body.children)
+            else:
+                new_body_html = str(soup)
+            docs[href] = (soup, new_body_html)
+            total_promoted += promoted_in_file
+
+    # ------------------------------------------------------------------
+    # 4. Report
+    # ------------------------------------------------------------------
+    if total_promoted or demotion_summary:
+        print(f"\n--- Heading Promotion ({total_promoted} elements promoted) ---")
+        if demotion_summary:
+            print(f"  Demoted existing headings to make room:")
+            for old_tag, new_tag in sorted(demotion_summary.items()):
+                print(f"    <{old_tag}> -> <{new_tag}>")
+        for key in sorted(promotion_summary.keys()):
+            texts = promotion_summary[key]
+            print(f"  {key}: {len(texts)} element(s)")
+            for t in texts[:5]:
+                print(f"       . {t[:80]}")
+            if len(texts) > 5:
+                print(f"       ... and {len(texts) - 5} more")
+    else:
+        print("\n--- Heading Promotion: no promotable elements found ---")
+
+    return total_promoted
+
+
 def cross_reference_toc_headings(
     toc_entries: list[TOCEntry],
     docs: OrderedDict,
@@ -363,26 +562,29 @@ def identify_hierarchy(
                 role_idx = min(depth, len(role_names) - 1)
                 hierarchy[most_common_tag] = role_names[role_idx]
 
-    # Strategy 2: Use heading text patterns as a fallback / supplement.
-    # Text starting with "Part" -> part, "Section" -> section, "Chapter" -> chapter.
-    if not hierarchy:
-        pattern_roles = [
-            (re.compile(r"^part\b", re.IGNORECASE), "part"),
-            (re.compile(r"^section\b", re.IGNORECASE), "section"),
-            (re.compile(r"^(chapter|ch\.?\s)\b", re.IGNORECASE), "chapter"),
-        ]
-        tag_role_votes: dict[str, Counter] = {}
-        for tag, entries_list in heading_data.items():
-            for text, _href in entries_list:
-                for pattern, role in pattern_roles:
-                    if pattern.search(text):
-                        tag_role_votes.setdefault(tag, Counter())[role] += 1
-                        break
+    # Strategy 2: Use heading text patterns to supplement (or, if Strategy 1
+    # found nothing, to bootstrap) the hierarchy.  For each heading tag not
+    # yet in the hierarchy, check whether a significant fraction of its
+    # entries start with "Part", "Section", "Chapter", etc.
+    pattern_roles = [
+        (re.compile(r"^part\b", re.IGNORECASE), "part"),
+        (re.compile(r"^section\b", re.IGNORECASE), "section"),
+        (re.compile(r"^(chapter|ch\.?\s)\b", re.IGNORECASE), "chapter"),
+    ]
+    tag_role_votes: dict[str, Counter] = {}
+    for tag, entries_list in heading_data.items():
+        if tag in hierarchy:
+            continue  # already assigned by Strategy 1
+        for text, _href in entries_list:
+            for pattern, role in pattern_roles:
+                if pattern.search(text):
+                    tag_role_votes.setdefault(tag, Counter())[role] += 1
+                    break
 
-        for tag in sorted(tag_role_votes.keys(), key=lambda t: int(t[1])):
-            best_role = tag_role_votes[tag].most_common(1)[0][0]
-            if best_role not in hierarchy.values():
-                hierarchy[tag] = best_role
+    for tag in sorted(tag_role_votes.keys(), key=lambda t: int(t[1])):
+        best_role = tag_role_votes[tag].most_common(1)[0][0]
+        if best_role not in hierarchy.values():
+            hierarchy[tag] = best_role
 
     # Strategy 3: Fallback — assign by heading level order
     if not hierarchy:
@@ -397,6 +599,7 @@ def identify_hierarchy(
 def run_structural_audit(
     book: ep.EpubBook,
     epub_path: Path,
+    heading_map: dict[str, str] | None = None,
 ) -> dict:
     """Run Phase 1: Structural Audit. Returns audit results dict."""
     print("\n" + "=" * 65)
@@ -424,6 +627,9 @@ def run_structural_audit(
 
     # 3. Parse content files
     docs = parse_content_files(book)
+
+    # 3b. Promote styled divs/paragraphs to semantic heading tags
+    promote_styled_headings(docs, heading_map=heading_map)
 
     # 4. Scan headings
     heading_data = scan_headings(docs)
@@ -559,25 +765,54 @@ def build_chapter_candidates(
         all_html_parts.append(body_html)
         current_pos += len(body_html)
 
-    full_html = "".join(all_html_parts)
-    full_soup = BeautifulSoup(full_html, "lxml")
+    full_html_raw = "".join(all_html_parts)
+    full_soup = BeautifulSoup(full_html_raw, "lxml")
 
-    # Find all split-level headings and parent headings
+    # Re-serialize from the parsed soup so that str(el) is guaranteed to
+    # match substrings of full_html (avoids serialization mismatches).
+    body_tag = full_soup.find("body")
+    if body_tag:
+        full_html = "".join(str(c) for c in body_tag.children)
+    else:
+        full_html = str(full_soup)
+
+    # Recompute file boundaries against the re-serialized HTML.
+    # (Approximate: walk docs in order and find their first heading or
+    # a unique text snippet to anchor the boundary.)
+    file_boundaries = []
+    boundary_offset = 0
+    for href, (_soup, body_html) in docs.items():
+        file_boundaries.append((boundary_offset, href))
+        # Advance by the approximate length; exact match isn't critical
+        # since this is only used for source_file metadata.
+        boundary_offset += len(body_html)
+
+    # Find all split-level headings and parent headings.
+    # Use progressive search offset so duplicate headings are matched in
+    # document order instead of all resolving to the first occurrence.
     all_headings = []
+    search_offset = 0
     for el in full_soup.find_all(re.compile(r"^h[1-6]$")):
         tag_name = el.name
         text = el.get_text(strip=True)
         if not text:
             continue
-        # Get position in full_html for ordering
         el_str = str(el)
-        pos = full_html.find(el_str)
+        pos = full_html.find(el_str, search_offset)
         if pos < 0:
-            # Try finding by text content
-            pos = full_html.find(text)
+            # Try finding by text content from current offset
+            pos = full_html.find(text, search_offset)
+        if pos < 0:
+            # Last resort: search from beginning (shouldn't normally happen)
+            pos = full_html.find(el_str)
+            if pos < 0:
+                pos = full_html.find(text)
+        if pos >= 0:
+            search_offset = pos + 1
         all_headings.append((pos, tag_name, text, el_str))
 
-    # Sort by position
+    # all_headings is already in document order from find_all(); the sort
+    # is kept as a safety net but should be a no-op.
     all_headings.sort(key=lambda x: x[0])
 
     # Build chapter candidates by tracking parent context
@@ -1051,6 +1286,15 @@ Examples:
         "--manifest",
         help="Path to a previous manifest JSON to replay selections",
     )
+    parser.add_argument(
+        "--heading-map",
+        help=(
+            "Custom CSS-class to heading-tag mapping as a JSON string or "
+            "path to a JSON file.  Example: "
+            '\'{"mypart": "h1", "mychap": "h2"}\' '
+            "or  heading_map.json"
+        ),
+    )
     return parser
 
 
@@ -1078,9 +1322,38 @@ def main():
     if args.exclude_keywords:
         exclude_keywords = [kw.strip() for kw in args.exclude_keywords.split(",") if kw.strip()]
 
+    # Parse heading map
+    heading_map = None
+    if args.heading_map:
+        raw = args.heading_map.strip()
+        if raw.startswith("{"):
+            # Inline JSON string
+            try:
+                heading_map = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                print(f"ERROR: Invalid JSON in --heading-map: {exc}")
+                sys.exit(1)
+        else:
+            # Treat as a file path
+            hm_path = Path(raw).resolve()
+            if not hm_path.exists():
+                print(f"ERROR: Heading-map file not found: {raw}")
+                sys.exit(1)
+            try:
+                heading_map = json.loads(hm_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                print(f"ERROR: Invalid JSON in heading-map file: {exc}")
+                sys.exit(1)
+        # Normalize: keys to lowercase, values to lowercase h-tag
+        heading_map = {
+            k.lower(): v.lower() if v.lower().startswith("h") else f"h{v}"
+            for k, v in heading_map.items()
+        }
+        print(f"  Custom heading map: {heading_map}")
+
     # --- Phase 1: Structural Audit ---
     book = read_epub(epub_path)
-    audit = run_structural_audit(book, epub_path)
+    audit = run_structural_audit(book, epub_path, heading_map=heading_map)
 
     if args.audit_only:
         print("\n" + "=" * 65)
