@@ -1180,10 +1180,21 @@ def build_chapter_candidates(
         soup, body_html = doc_data
         ancestors = entry_ancestors.get(id(entry), [])
 
-        # Build abbreviated ancestor labels
-        ancestor_labels = [
-            _abbreviate_label(a, _guess_role(a)) for a in ancestors
-        ]
+        # Build abbreviated ancestor labels, filtering out non-structural
+        # ancestors (book title, translator/editor credits).
+        book_title_upper = audit.get("book_title", "").upper()
+        non_structural_re = re.compile(
+            r"^(translated|edited|compiled|selected|introduced|annotated)"
+            r"\s+by\b",
+            re.IGNORECASE,
+        )
+        ancestor_labels = []
+        for a in ancestors:
+            if book_title_upper and a.strip().upper() == book_title_upper:
+                continue
+            if non_structural_re.match(a):
+                continue
+            ancestor_labels.append(_abbreviate_label(a, _guess_role(a)))
 
         # Fragment-aware content extraction (Fix F8):
         # When multiple entries share the same file, split at fragment boundaries
