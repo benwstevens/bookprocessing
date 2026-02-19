@@ -616,12 +616,29 @@ def identify_hierarchy(
     role_names = ["part", "section", "chapter", "subsection"]
 
     if depth_to_tags:
-        # Assign roles based on TOC depth mapping
-        for depth in sorted(depth_to_tags.keys()):
-            most_common_tag = depth_to_tags[depth].most_common(1)[0][0]
-            if most_common_tag not in hierarchy:
+        # For each heading tag that appears at multiple TOC depths, determine
+        # its "home" depth — the depth where it has the most matches.  This
+        # prevents a shallow depth with a single spurious match from claiming
+        # a tag that overwhelmingly belongs to a deeper level (e.g. <h4>
+        # matched once at depth 0 but 48 times at depth 2).
+        tag_home_depth: dict[str, int] = {}
+        for depth, counter in depth_to_tags.items():
+            for tag, count in counter.items():
+                prev_depth = tag_home_depth.get(tag)
+                if prev_depth is None or count > depth_to_tags[prev_depth][tag]:
+                    tag_home_depth[tag] = depth
+
+        # Assign roles depth-by-depth using each tag's home depth.
+        # At each depth, pick the tag with the most matches.
+        for depth in sorted(set(tag_home_depth.values())):
+            tags_at_depth = [t for t, d in tag_home_depth.items() if d == depth]
+            best_tag = max(
+                tags_at_depth,
+                key=lambda t: (depth_to_tags[depth][t], -int(t[1])),
+            )
+            if best_tag not in hierarchy:
                 role_idx = min(depth, len(role_names) - 1)
-                hierarchy[most_common_tag] = role_names[role_idx]
+                hierarchy[best_tag] = role_names[role_idx]
 
     # Strategy 2: Use heading text patterns to supplement (or, if Strategy 1
     # found nothing, to bootstrap) the hierarchy.  For each heading tag not
@@ -1008,13 +1025,27 @@ def _detect_chapter_depth(flat_toc: list[TOCEntry], max_toc_depth: int) -> int:
 
     # No explicit chapter markers.  Check if depth-0 has a mix of parts
     # and content entries (chapters without "CHAPTER" prefix).  If the
-    # majority at depth 0 are NOT parts, treat depth 0 as chapter level.
+    # majority at depth 0 are NOT parts, treat depth 0 as chapter level —
+    # UNLESS depth 0 has very few entries and a deeper depth has far more,
+    # indicating that depth-0 entries are metadata/titles, not chapters
+    # (e.g. Kierkegaard: bulletin info at depth 0, chapters at depth 2).
     depth_0_entries = [e for e in flat_toc if e.depth == 0 and e.base_href]
     if depth_0_entries:
         part_count = sum(1 for e in depth_0_entries if part_re.match(e.title))
         non_part = len(depth_0_entries) - part_count
         # If most depth-0 entries are not parts, chapters live at depth 0
         if non_part > part_count:
+            # Guard: if a deeper depth has far more entries (3x+) than
+            # depth 0, the real chapters are likely deeper and depth-0
+            # entries are just metadata/titles/boilerplate.
+            deeper_counts = {
+                d: total_counts.get(d, 0)
+                for d in range(1, max_toc_depth + 1)
+            }
+            if deeper_counts:
+                best_deeper = max(deeper_counts, key=lambda d: deeper_counts[d])
+                if deeper_counts[best_deeper] > len(depth_0_entries) * 3:
+                    return best_deeper
             return 0
 
     # Default: use max depth (works for books like Moral Sentiments where
