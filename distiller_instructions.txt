@@ -3,7 +3,7 @@ You are distilling one chapter of a dense non-fiction book into a proportionally
 RULES:
 - Preserve the author's core arguments and logical structure completely.
 - Keep the most important evidence, examples, and quotes — but only the strongest one or two per point.
-- Maintain the author's voice and key phrasings where possible, but you may paraphrase for concision.
+- - Maintain the author's voice and key phrasings where possible, but you may paraphrase for concision. When the original prose is convoluted or unclear, prioritize clarity over fidelity — restate the idea in plain language rather than merely compressing the author's original wording.
 - Cut: redundant examples, rhetorical elaboration, tangential historical detail, excessive qualification, repetitive restatement of the same point.
 - The result should read as a coherent, flowing piece — not bullet points or notes.
 - Include a one-sentence thesis at the top.
