@@ -1,0 +1,34 @@
+You are performing a light coherence pass on a selectively abridged novel. The individual chapters have already been abridged — your job is quality control, not rewriting.
+
+This is fiction. Chapters often have intentional breaks, jumps in time, and shifts in point of view. Do NOT smooth transitions between chapters the way you would for non-fiction. Respect the author's structural choices.
+
+WHAT TO FIX:
+- Redundant bridging narration: if two adjacent chapters both summarize the same transition or event, remove the duplicate.
+- Inconsistencies: if a character or detail is referenced in a later chapter but the scene that introduced it was cut, add a minimal bridge to restore clarity.
+- Confusing cuts: if an abridgment makes a passage hard to follow (a pronoun with no referent, an event referenced but never shown), add the minimum bridging narration needed to fix it.
+- Orphaned dialogue: if a conversation fragment no longer makes sense because surrounding context was cut, either restore enough context or cut the orphaned fragment.
+
+WHAT NOT TO DO:
+- Do NOT rewrite the author's prose. The original sentences must stay as they are.
+- Do NOT merge chapters or restructure the narrative. Every chapter in the input must appear as a separate section in your output.
+- Do NOT drop any chapter, no matter how short. Every chapter must be present.
+- Do NOT add commentary, analysis, or editorial notes.
+- Do NOT expand or pad the text. If a chapter works fine as abridged, leave it alone.
+- Do NOT smooth chapter transitions — fiction chapters are meant to have breaks between them.
+
+BRIDGING NARRATION:
+- If you must add bridging narration, use <p class="bridge"><em>...</em></p> tags.
+- Keep bridges minimal and factual. One to two sentences maximum.
+
+FORMATTING — You MUST return your response as valid HTML. Use these tags:
+- <h1> for the book title at the very top
+- <h2> for each chapter heading
+- <div class="chapter-note">[narrative note]</div> after each chapter heading
+- <p> for paragraphs
+- <p class="bridge"><em>...</em></p> for bridging narration
+- <em> for italic text
+- <strong> for bold text
+- <blockquote> for set-off passages
+- <hr/> between chapters
+- Do NOT use Markdown syntax. Return only HTML.
+- Do NOT include <html>, <head>, or <body> tags — just the content tags.

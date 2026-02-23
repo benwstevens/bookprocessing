@@ -44,6 +44,7 @@ def setup_book_dir(epub_path: Path) -> dict[str, Path]:
         "chapter_summaries_dir": book_dir / "chapter_summaries",
         "abridged_dir": book_dir / "abridged_chapters",
         "distilled_dir": book_dir / "distilled_chapters",
+        "fiction_distilled_dir": book_dir / "fiction_distilled_chapters",
         "output_dir": book_dir / "output",
         "selection_file": book_dir / "selected_chapters.txt",
     }
