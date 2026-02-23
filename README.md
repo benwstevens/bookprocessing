@@ -7,6 +7,7 @@ Three Python scripts that process ebooks through the Claude API, each producing 
 | `abridger.py` | **Abridger** — cuts 40-60% of the text while keeping the author's original words | ~50% of original |
 | `outliner.py` | **Outliner** — thesis, outline, key concepts, key passages, and critical questions for each chapter | 30% of original |
 | `distiller.py` | **Distiller** — two-pass hierarchical summarization that condenses a full book into a flowing summary | ~10,000 words (configurable) |
+| `fiction_distiller.py` | **Fiction Distiller** — selective abridgment for novels: keeps original prose, dialogue, and voice while cutting to the scenes that matter | ~15,000 words (configurable) |
 
 All three output a Kindle-compatible EPUB and a single HTML file.
 
@@ -101,6 +102,20 @@ To change the target word count (default is 10,000):
 python3 distiller.py mybook.epub --target 5000
 ```
 
+### Fiction Distiller (fiction_distiller.py)
+
+Selective abridgment for fiction. Keeps the author's original prose, dialogue, and voice — cuts to the scenes that matter and bridges gaps with minimal italicized narration. The output reads like the actual novel, just shorter.
+
+```bash
+python3 fiction_distiller.py mynovel.epub
+```
+
+To change the target word count (default is 15,000):
+
+```bash
+python3 fiction_distiller.py mynovel.epub --target 20000
+```
+
 ### Options (all scripts)
 
 | Flag | What it does |
@@ -187,12 +202,13 @@ Each book gets its own folder automatically:
 ```
 books/
   mybook/
-    source/              # Original EPUB + converted HTML
-    chapters/            # Individual chapter HTML files
-    chapter_summaries/   # Study companion output (outliner.py)
-    abridged_chapters/   # Abridged output (abridger.py)
-    distilled_chapters/  # Distilled output (distiller.py)
-    output/              # Final EPUB and HTML files
+    source/                      # Original EPUB + converted HTML
+    chapters/                    # Individual chapter HTML files
+    chapter_summaries/           # Study companion output (outliner.py)
+    abridged_chapters/           # Abridged output (abridger.py)
+    distilled_chapters/          # Distilled output (distiller.py)
+    fiction_distilled_chapters/  # Fiction distilled output (fiction_distiller.py)
+    output/                      # Final EPUB and HTML files
 ```
 
 You never need to delete files between books — just run a script with a different EPUB and it creates a new folder.
@@ -208,6 +224,7 @@ These scripts use the Claude API, which charges per token. Rough estimates for a
 | Outliner | ~$3-6 |
 | Abridger | ~$5-10 |
 | Distiller | ~$4-8 |
+| Fiction Distiller | ~$5-10 |
 
 Each script shows an estimated cost and asks for confirmation before making any API calls. You can check your balance and add credits at [console.anthropic.com/settings/billing](https://console.anthropic.com/settings/billing).
 
@@ -222,6 +239,7 @@ Each script reads its Claude instructions from a plain text file:
 | `outliner.py` | `outliner_instructions.txt` |
 | `abridger.py` | `abridger_instructions.txt` |
 | `distiller.py` | `distiller_instructions.txt` + `distiller_coherence_instructions.txt` |
+| `fiction_distiller.py` | `fiction_distiller_instructions.txt` + `fiction_distiller_coherence_instructions.txt` |
 
 Edit these files to change what Claude produces. The only hard requirement is that the output must be HTML (not Markdown) — the scripts expect HTML when assembling the final EPUB.
 
@@ -253,17 +271,20 @@ Open System Settings > Displays > Advanced > uncheck "Automatically turn off dis
 
 ```
 bookprocessing/
-  outliner.py                        # Outliner script (study companion)
-  abridger.py                        # Abridger script
-  distiller.py                       # Distiller script
-  papercopyprep.py                   # PDF-to-EPUB converter for scanned books
-  shared.py                          # Shared utilities (used by all three)
-  outliner_instructions.txt          # Instructions for outliner
-  abridger_instructions.txt          # Instructions for abridger
-  distiller_instructions.txt         # Instructions for distiller (per-chapter pass)
-  distiller_coherence_instructions.txt  # Instructions for distiller (coherence pass)
-  requirements.txt                   # Python dependencies
-  .env                               # Your API key (not tracked by git)
+  outliner.py                                # Outliner script (study companion)
+  abridger.py                                # Abridger script
+  distiller.py                               # Distiller script
+  fiction_distiller.py                        # Fiction distiller script
+  papercopyprep.py                           # PDF-to-EPUB converter for scanned books
+  shared.py                                  # Shared utilities (used by all scripts)
+  outliner_instructions.txt                  # Instructions for outliner
+  abridger_instructions.txt                  # Instructions for abridger
+  distiller_instructions.txt                 # Instructions for distiller (per-chapter pass)
+  distiller_coherence_instructions.txt       # Instructions for distiller (coherence pass)
+  fiction_distiller_instructions.txt          # Instructions for fiction distiller (per-chapter pass)
+  fiction_distiller_coherence_instructions.txt  # Instructions for fiction distiller (coherence pass)
+  requirements.txt                           # Python dependencies
+  .env                                       # Your API key (not tracked by git)
   .gitignore
   README.md
 ```
