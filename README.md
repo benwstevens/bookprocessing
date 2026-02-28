@@ -38,7 +38,7 @@ cd bookprocessing
 pip3 install -r requirements.txt
 ```
 
-This installs: `anthropic`, `ebooklib`, `beautifulsoup4`, `lxml`, `pymupdf`
+This installs: `anthropic`, `ebooklib`, `beautifulsoup4`, `lxml`, `pymupdf`, `knock`
 
 ### 3. Add your API key
 
@@ -173,6 +173,37 @@ python3 outliner.py "The_Book_Title.epub"
 
 ---
 
+## Processing a purchased ebook
+
+If you buy DRM-protected ebooks from ebooks.com (or other Adobe DRM retailers):
+
+### First time only: link your Adobe account
+
+```bash
+python3 prepare.py --setup
+```
+
+This connects your Adobe ID to your machine (same as Adobe Digital Editions does on first launch). You only need to do this once.
+
+### For each book
+
+```bash
+python3 prepare.py ~/Downloads/URLLink.acsm
+```
+
+This downloads the ebook and removes DRM, producing a clean EPUB you can process:
+
+```bash
+python3 splitready.py The_Great_Transformation.epub
+python3 distiller.py The_Great_Transformation.epub
+```
+
+> **Note:** ebooks.com limits downloads to 3 per format. Each time you run
+> prepare.py on the same ASCM file, it uses one of those downloads. The ASCM
+> file is a one-time download ticket, not the book itself.
+
+---
+
 ## How it works
 
 Each script follows the same five stages:
@@ -271,12 +302,14 @@ Open System Settings > Displays > Advanced > uncheck "Automatically turn off dis
 
 ```
 bookprocessing/
+  prepare.py                                 # ASCM-to-clean-EPUB acquisition script
   outliner.py                                # Outliner script (study companion)
   abridger.py                                # Abridger script
   distiller.py                               # Distiller script
   fiction_distiller.py                        # Fiction distiller script
   papercopyprep.py                           # PDF-to-EPUB converter for scanned books
   shared.py                                  # Shared utilities (used by all scripts)
+  dedrm/                                     # Vendored DeDRM library (optional)
   outliner_instructions.txt                  # Instructions for outliner
   abridger_instructions.txt                  # Instructions for abridger
   distiller_instructions.txt                 # Instructions for distiller (per-chapter pass)

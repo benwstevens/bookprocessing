@@ -3,3 +3,4 @@ ebooklib
 beautifulsoup4
 lxml
 pymupdf
+knock
